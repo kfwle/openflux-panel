@@ -55,6 +55,15 @@ curl -fsSL https://raw.githubusercontent.com/kfwle/openflux-panel/main/setup.sh 
 
 Первый вход — ваш логин/пароль → смените пароль в Настройках после входа.
 
+### Удаление
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kfwle/openflux-panel/main/uninstall.sh | bash
+```
+
+Сносит systemd-сервис, каталог установки со всеми ключами и данными, правила фаервола.
+Go, git и своп не трогает.
+
 ### Для режима l3 (Linux + root)
 
 Установщик добавляет сам, вручную так:
