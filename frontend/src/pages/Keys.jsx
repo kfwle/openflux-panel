@@ -230,9 +230,32 @@ function KeyFormModal({ form, onClose, reload, notify }) {
 }
 
 /* ================= QR modal ================= */
+async function copyText(t) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(t);
+      return true;
+    }
+    throw new Error('no clipboard');
+  } catch {
+    // fallback для http без TLS: скрытый textarea + execCommand
+    const ta = document.createElement('textarea');
+    ta.value = t;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch { ok = false; }
+    ta.remove();
+    return ok;
+  }
+}
+
 function QrModal({ qr, onClose, notify }) {
   if (!qr) return <Modal open={false} onClose={onClose} />;
-  const copy = (t, v) => navigator.clipboard.writeText(v).then(() => notify(t));
+  const copy = async (okMsg, v) => notify(await copyText(v) ? okMsg : 'Не скопировалось — выделите текст вручную');
   return (
     <Modal open={!!qr} onClose={onClose}>
       <ModalHead title={qr.name} onClose={onClose} />

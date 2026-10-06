@@ -3,9 +3,11 @@ package main
 // main.go — HTTP server + REST API + static web UI.
 
 import (
+	"embed"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -20,6 +22,9 @@ var (
 	dataDir string
 	version = "1.0.0"
 )
+
+//go:embed web
+var embeddedWeb embed.FS
 
 func main() {
 	port := flag.String("port", "8080", "panel listen port")
@@ -62,21 +67,32 @@ func main() {
 	mux.HandleFunc("/api/history", auth(hHistory))
 	mux.HandleFunc("/api/public-ip", auth(hPublicIP))
 
-	// static
-	webDir := "./web"
-	if _, err := os.Stat(webDir); err != nil {
-		webDir = filepath.Join(filepath.Dir(os.Args[0]), "web")
+	// static: ./web на диске (dev) -> web рядом с бинарём -> вшитый в бинарь (single-file)
+	diskWeb := ""
+	for _, cand := range []string{"./web", filepath.Join(filepath.Dir(os.Args[0]), "web")} {
+		if st, err := os.Stat(filepath.Join(cand, "index.html")); err == nil && !st.IsDir() {
+			diskWeb = cand
+			break
+		}
 	}
+	embFS, _ := fs.Sub(embeddedWeb, "web")
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		p := r.URL.Path
-		if p == "/" {
-			p = "/index.html"
+		p := strings.TrimPrefix(r.URL.Path, "/")
+		if p == "" {
+			p = "index.html"
 		}
-		f := filepath.Join(webDir, strings.TrimPrefix(p, "/"))
-		if _, err := os.Stat(f); err != nil {
-			f = filepath.Join(webDir, "index.html")
+		if diskWeb != "" {
+			f := filepath.Join(diskWeb, p)
+			if _, err := os.Stat(f); err != nil {
+				f = filepath.Join(diskWeb, "index.html")
+			}
+			http.ServeFile(w, r, f)
+			return
 		}
-		http.ServeFile(w, r, f)
+		if _, err := fs.Stat(embFS, p); err != nil {
+			p = "index.html"
+		}
+		http.ServeFileFS(w, r, embFS, p)
 	})
 
 	addr := "0.0.0.0:" + *port

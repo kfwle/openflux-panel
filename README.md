@@ -109,8 +109,9 @@ go build -o openflux-panel . && ./openflux-panel -port 8080 -data ./data
 openflux-panel/
   main.go manager.go store.go oflink.go auth.go  — бэкенд (stdlib only)
   frontend/   — React + framer-motion + Tailwind (Vite)
-  web/        — собранный фронт (коммитится, чтобы не требовать node на сервере)
-  setup.sh install.sh Dockerfile docker-compose.yml
+  web/        — собранный фронт: коммитится И вшивается в бинарь (go:embed),
+               так что панель — один файл без зависимостей
+  setup.sh install.sh uninstall.sh Dockerfile docker-compose.yml
 ```
 
 Пересобрать фронт: `cd frontend && npm i && npm run build` (положит в `../web`).
