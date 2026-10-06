@@ -1,0 +1,7 @@
+data/
+*.log
+openflux-panel
+openflux
+frontend/node_modules/
+frontend/dist/
+/tmp/

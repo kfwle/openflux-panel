@@ -1,0 +1,17 @@
+services:
+  panel:
+    build: .
+    container_name: openflux-panel
+    ports:
+      - "8080:8080"
+      # direct-порты ключей (поправьте диапазон под свои настройки):
+      - "20000-20100:20000-20100"
+    volumes:
+      - ./data:/app/data
+      # подложите свой openflux binary сюда и укажите путь /app/openflux в настройках:
+      - ./openflux:/app/openflux:ro
+    environment:
+      ADMIN_USER: admin
+      ADMIN_PASS: admin123
+    restart: unless-stopped
+    network_mode: host  # нужен host, чтобы direct-порты и ss работали корректно; либо пробросьте порты вручную
