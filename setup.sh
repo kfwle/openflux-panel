@@ -21,6 +21,7 @@ DIRECT_FROM="${DIRECT_FROM:-20000}"
 DIRECT_TO="${DIRECT_TO:-20099}"
 DEFAULT_MODE="${DEFAULT_MODE:-}"      # empty -> l3 on root+linux, else l4
 BUILD_CORE="${BUILD_CORE:-ask}"       # yes/no/ask
+CORE_TAG="${CORE_TAG:-}"              # pin node release (node-vX.Y.Z); empty -> latest
 OPEN_FW="${OPEN_FW:-ask}"             # yes/no/ask
 ASSUME_YES=0
 
@@ -85,6 +86,7 @@ while [ $# -gt 0 ]; do
     --mode) DEFAULT_MODE="$2"; shift 2;;
     --dir) INSTALL_DIR="$2"; shift 2;;
     --repo) PANEL_REPO="$2"; shift 2;;
+    --core-tag) CORE_TAG="$2"; shift 2;;
     --yes) ASSUME_YES=1; shift;;
     --no-core) BUILD_CORE="no"; shift;;
     --no-fw) OPEN_FW="no"; shift;;
@@ -115,7 +117,7 @@ if [ "$DEFAULT_MODE" != "l3" ] && [ "$DEFAULT_MODE" != "l4" ]; then
   ask DEFAULT_MODE "Режим exit по умолчанию (l3 = Linux+root быстрее, l4 = везде)" "$DEFAULT_MODE"
 fi
 ask INSTALL_DIR "Куда ставить" "$INSTALL_DIR"
-ask_yesno DO_CORE "Собрать ядро openflux из исходников" "yes"
+ask_yesno DO_CORE "Поставить ядро openflux (готовая сборка, иначе компиляция)" "yes"
 ask_yesno DO_FW "Открыть порты в фаерволе (панель + direct-диапазон)" "yes"
 
 echo ""
@@ -153,13 +155,47 @@ else
   git clone "$PANEL_REPO" "$INSTALL_DIR/panel" || die "Не клонируется $PANEL_REPO"
 fi
 
+# ---------- prebuilt core (no compile, no Go, no gVisor download) ----------
+fetch_prebuilt_core() {
+  local arch tag base
+  case "$(uname -m)" in
+    x86_64) arch="amd64";; aarch64|arm64) arch="arm64";; armv7l|armhf) arch="arm";; *)
+      warn "Архитектура $(uname -m): готовой сборки нет"; return 1;;
+  esac
+  if [ -n "$CORE_TAG" ]; then
+    tag="$CORE_TAG"
+  else
+    tag=$(curl -fsSL --max-time 20 "https://api.github.com/repos/p1neappleXpress/OpenFlux/releases?per_page=30" 2>/dev/null \
+      | grep -o '"tag_name": *"node-v[^"]*"' | head -1 | sed 's/.*: *"//;s/"//')
+    [ -n "$tag" ] || { warn "Не узнал свежий node-релиз"; return 1; }
+  fi
+  base="https://github.com/p1neappleXpress/OpenFlux/releases/download/$tag"
+  say "Качаю готовое ядро $tag (linux-$arch, ~14 МБ)…"
+  curl -fsSL --max-time 180 -o "$INSTALL_DIR/panel/openflux-linux-$arch" "$base/openflux-linux-$arch" || return 1
+  if curl -fsSL --max-time 60 -o /tmp/SHA256SUMS-core "$base/SHA256SUMS" 2>/dev/null; then
+    if (cd "$INSTALL_DIR/panel" && grep "openflux-linux-$arch" /tmp/SHA256SUMS-core | sha256sum -c - >/dev/null 2>&1); then
+      say "SHA256 сошёлся."
+    else
+      warn "SHA256 не сошёлся — бинарь удалён"
+      rm -f "$INSTALL_DIR/panel/openflux-linux-$arch"
+      return 1
+    fi
+  else
+    warn "SHA256SUMS не скачался — ставлю без проверки"
+  fi
+  mv "$INSTALL_DIR/panel/openflux-linux-$arch" "$INSTALL_DIR/panel/openflux"
+  chmod +x "$INSTALL_DIR/panel/openflux"
+}
+
 # ---------- build panel ----------
 say "Собираю панель…"
 (cd "$INSTALL_DIR/panel" && go build -o openflux-panel .) || die "Сборка панели упала"
 chmod +x "$INSTALL_DIR/panel/openflux-panel"
 
-# ---------- build core ----------
+# ---------- core: prebuilt first, source fallback ----------
 if [ "$DO_CORE" = "yes" ]; then
+  if ! fetch_prebuilt_core; then
+    warn "Готовый бинарь не встал — собираю ядро из исходников (долго)…"
   if [ -d "$INSTALL_DIR/core/.git" ]; then
     say "Обновляю ядро…"
     git -C "$INSTALL_DIR/core" pull --ff-only 2>/dev/null || true
@@ -171,6 +207,7 @@ if [ "$DO_CORE" = "yes" ]; then
   (cd "$INSTALL_DIR/core" && CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath -o openflux .) || die "Сборка ядра упала"
   chmod +x "$INSTALL_DIR/core/openflux"
   ln -sf "$INSTALL_DIR/core/openflux" "$INSTALL_DIR/panel/openflux"
+  fi
   CORE_BIN="$INSTALL_DIR/panel/openflux"
 else
   CORE_BIN="$INSTALL_DIR/panel/openflux"
