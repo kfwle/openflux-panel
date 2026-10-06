@@ -87,6 +87,12 @@ func (m *Manager) buildArgs(k *Key) []string {
 	}
 
 	args := []string{"--role=exit", "--mode=" + k.Mode}
+	if k.Mode == "l3" {
+		snap := m.store.snapshot()
+		if snap.Settings.LocalIP != "" {
+			args = append(args, "--local-ip="+snap.Settings.LocalIP)
+		}
+	}
 	if k.Codec != "" {
 		args = append(args, "--codec="+k.Codec)
 	}

@@ -36,6 +36,7 @@ export default function Settings({ settings, reload, notify }) {
         openflux_bin: (cur.openflux_bin || '').trim() || './openflux',
         default_mode: cur.default_mode || 'l3',
         default_codec: cur.default_codec || 'batched',
+        local_ip: (cur.local_ip || '').trim(),
         auto_disable: !!cur.auto_disable,
         auto_delete_days: parseInt(cur.auto_delete_days) || 0,
         poll_interval_sec: parseInt(cur.poll_interval_sec) || 10,
@@ -76,6 +77,11 @@ export default function Settings({ settings, reload, notify }) {
           <div><label className="lbl">Порты direct до</label><input type="number" className="inp mono" value={cur.direct_to || ''} onChange={(e) => set('direct_to', e.target.value)} /></div>
         </div>
         <div><label className="lbl">Путь к бинарю openflux</label><input className="inp mono" value={cur.openflux_bin || ''} onChange={(e) => set('openflux_bin', e.target.value)} placeholder="./openflux" /></div>
+        <div>
+          <label className="lbl">Local IP для l3 (необязательно)</label>
+          <input className="inp mono" value={cur.local_ip || ''} onChange={(e) => set('local_ip', e.target.value)} placeholder="напр. 10.0.0.5" />
+          <div className="text-xs text-faint mt-1.5">Выделенный egress-IP + правило <span className="mono">iptables … -s IP -j DROP</span> против kernel RST. Без него — правило на весь хост (см. помощь).</div>
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <div><label className="lbl">Режим по умолчанию</label>
             <select className="inp" value={cur.default_mode || 'l3'} onChange={(e) => set('default_mode', e.target.value)}>

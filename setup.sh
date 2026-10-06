@@ -420,6 +420,15 @@ if [ "$DO_TLS" = "yes" ]; then
   fi
 fi
 
+# ---------- persist firewall (иначе правила слетят после ребута) ----------
+if [ "$(id -u)" = "0" ] && command -v apt-get >/dev/null 2>&1; then
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq iptables-persistent >/dev/null 2>&1 || true
+  if command -v netfilter-persistent >/dev/null 2>&1; then
+    netfilter-persistent save >/dev/null 2>&1 || true
+    say "Правила iptables сохранены (переживут ребут)."
+  fi
+fi
+
 # ---------- seed settings ----------
 SETTINGS_JSON="$INSTALL_DIR/panel/data/panel.json"
 if [ ! -f "$SETTINGS_JSON" ]; then

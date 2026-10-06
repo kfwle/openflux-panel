@@ -53,6 +53,7 @@ type Settings struct {
 	OpenfluxBin     string `json:"openflux_bin"`
 	DefaultMode     string `json:"default_mode"`
 	DefaultCodec    string `json:"default_codec"`
+	LocalIP         string `json:"local_ip,omitempty"` // l3 egress IP (--local-ip) + scoped RST rule
 	AutoDisable     bool   `json:"auto_disable"`
 	AutoDeleteDays  int    `json:"auto_delete_days"` // 0 = выкл: удалять ключи спустя N дней в limited/expired
 	PollIntervalSec int    `json:"poll_interval_sec"`
