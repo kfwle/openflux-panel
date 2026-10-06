@@ -35,6 +35,7 @@ type Key struct {
 	Expiry           string         `json:"expiry,omitempty"` // RFC3339 or ""
 	Enabled          bool           `json:"enabled"`
 	Status           string         `json:"status"` // active | disabled | limited | expired | error
+	LimitedAt        string         `json:"limited_at,omitempty"` // когда ключ ушёл в limited/expired
 	CreatedAt        string         `json:"created_at"`
 	UpdatedAt        string         `json:"updated_at"`
 	OnlineIPs        []string       `json:"online_ips,omitempty"`
@@ -53,6 +54,7 @@ type Settings struct {
 	DefaultMode     string `json:"default_mode"`
 	DefaultCodec    string `json:"default_codec"`
 	AutoDisable     bool   `json:"auto_disable"`
+	AutoDeleteDays  int    `json:"auto_delete_days"` // 0 = выкл: удалять ключи спустя N дней в limited/expired
 	PollIntervalSec int    `json:"poll_interval_sec"`
 }
 

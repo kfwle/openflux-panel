@@ -469,6 +469,7 @@ func hKeyOne(w http.ResponseWriter, r *http.Request) {
 				ck.Status = "disabled"
 			} else if ck.Status == "disabled" {
 				ck.Status = "active"
+				ck.LimitedAt = ""
 				ck.Error = ""
 			}
 		})
@@ -479,10 +480,8 @@ func hKeyOne(w http.ResponseWriter, r *http.Request) {
 		snap2 := store.snapshot()
 		writeJSON(w, 200, keyToMap(snap2.Keys[id]))
 	case action == "" && r.Method == "DELETE":
-		manager.stopKey(id)
+		manager.deleteKeyFiles(id)
 		store.with(true, func(d *StoreData) { delete(d.Keys, id) })
-		os.Remove(keyFilePath(dataDir, id))
-		os.Remove(ipcPath(dataDir, id))
 		writeJSON(w, 200, map[string]string{"ok": "1"})
 	case action == "restart" && r.Method == "POST":
 		manager.stopKey(id)
@@ -507,6 +506,7 @@ func hKeyOne(w http.ResponseWriter, r *http.Request) {
 				ck.LastDown = 0
 				if ck.Status == "limited" {
 					ck.Status = "active"
+					ck.LimitedAt = ""
 					ck.Error = ""
 					ck.Enabled = true
 				}
@@ -595,6 +595,9 @@ func hSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.PollIntervalSec < 3 {
 		in.PollIntervalSec = 10
+	}
+	if in.AutoDeleteDays < 0 {
+		in.AutoDeleteDays = 0
 	}
 	store.with(true, func(d *StoreData) { d.Settings = in })
 	writeJSON(w, 200, map[string]string{"ok": "1"})

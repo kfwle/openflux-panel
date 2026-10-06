@@ -37,6 +37,7 @@ export default function Settings({ settings, reload, notify }) {
         default_mode: cur.default_mode || 'l3',
         default_codec: cur.default_codec || 'batched',
         auto_disable: !!cur.auto_disable,
+        auto_delete_days: parseInt(cur.auto_delete_days) || 0,
         poll_interval_sec: parseInt(cur.poll_interval_sec) || 10,
       });
       notify('Настройки сохранены'); reload();
@@ -96,6 +97,7 @@ export default function Settings({ settings, reload, notify }) {
             Отключать при лимите
           </label>
         </div>
+        <div><label className="lbl">Автоудаление ключей, дней после лимита/срока (0 — выкл)</label><input type="number" min="0" className="inp mono" value={cur.auto_delete_days || 0} onChange={(e) => set('auto_delete_days', e.target.value)} /></div>
         <Btn kind="primary" onClick={save}>Сохранить</Btn>
       </motion.div>
 

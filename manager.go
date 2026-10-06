@@ -176,6 +176,23 @@ func (m *Manager) ensureKeyFile(k *Key) error {
 	return os.WriteFile(keyFilePath(m.dir, k.ID), []byte(k.Secret), 0600)
 }
 
+// deleteKeyFiles stops the exit process and removes all key files.
+func (m *Manager) deleteKeyFiles(id string) {
+	m.stopKey(id)
+	os.Remove(keyFilePath(m.dir, id))
+	os.Remove(ipcPath(m.dir, id))
+	if g, _ := filepath.Glob(filepath.Join(m.dir, "run", "cookies_"+id+"_*.json")); g != nil {
+		for _, f := range g {
+			os.Remove(f)
+		}
+	}
+}
+
+func stampLimited(ck *Key, now string) {
+	if ck.LimitedAt == "" {
+		ck.LimitedAt = now
+	}
+}
 func (m *Manager) isRunning(id string) bool {
 	m.mu.Lock()
 	p, ok := m.procs[id]
@@ -360,12 +377,24 @@ func (m *Manager) Tick() {
 	var samples []Sample
 	for _, k := range snap.Keys {
 		ck := *k
+		// auto-delete: key spent AutoDeleteDays in limited/expired
+		if snap.Settings.AutoDeleteDays > 0 && ck.LimitedAt != "" &&
+			(ck.Status == "limited" || ck.Status == "expired") {
+			if t, err := time.Parse(time.RFC3339, ck.LimitedAt); err == nil &&
+				time.Since(t) >= time.Duration(snap.Settings.AutoDeleteDays)*24*time.Hour {
+				m.deleteKeyFiles(ck.ID)
+				m.store.with(true, func(d *StoreData) { delete(d.Keys, ck.ID) })
+				changed = true
+				continue
+			}
+		}
 		// expiry / limits state
 		if expired(ck.Expiry) {
 			if ck.Status != "expired" || ck.Enabled {
 				m.stopKey(ck.ID)
 				ck.Enabled = false
 				ck.Status = "expired"
+				stampLimited(&ck, now)
 				ck.Connected = false
 				ck.Error = "срок действия истёк"
 				changed = true
@@ -382,6 +411,7 @@ func (m *Manager) Tick() {
 					ck.Enabled = false
 				}
 				ck.Status = "limited"
+				stampLimited(&ck, now)
 				ck.Connected = false
 				ck.Error = "лимит трафика исчерпан"
 				changed = true
@@ -445,10 +475,12 @@ func (m *Manager) Tick() {
 					ck.Enabled = false
 				}
 				ck.Status = "limited"
+				stampLimited(&ck, now)
 				ck.Connected = false
 				ck.Error = "лимит трафика исчерпан"
 			} else if ck.Status != "active" {
 				ck.Status = "active"
+				ck.LimitedAt = ""
 				ck.Error = ""
 			}
 			changed = true
@@ -471,6 +503,7 @@ func (m *Manager) Tick() {
 					m.stopKey(ck.ID)
 					ck.Enabled = false
 					ck.Status = "limited"
+					stampLimited(&ck, now)
 					ck.Connected = false
 				}
 				changed = true
