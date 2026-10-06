@@ -64,6 +64,20 @@ if pgrep -x "openflux-panel" >/dev/null 2>&1; then
   sleep 2
 fi
 
+# ---------- 1b. reverse-proxy (только наш managed-блок/файл; серты не трогаем) ----------
+if [ "$(id -u)" = "0" ]; then
+  if [ -f /etc/nginx/sites-available/openflux-panel ] || [ -f /etc/nginx/conf.d/openflux-panel.conf ]; then
+    say "Убираю конфиг nginx…"
+    rm -f /etc/nginx/sites-available/openflux-panel /etc/nginx/sites-enabled/openflux-panel /etc/nginx/conf.d/openflux-panel.conf
+    nginx -t >/dev/null 2>&1 && (systemctl reload nginx 2>/dev/null || nginx -s reload 2>/dev/null || true)
+  fi
+  if [ -f /etc/caddy/Caddyfile ] && grep -q "openflux-panel managed" /etc/caddy/Caddyfile 2>/dev/null; then
+    say "Убираю блок из Caddyfile…"
+    sed -i '/# --- openflux-panel managed ---/,/# --- end openflux-panel ---/d' /etc/caddy/Caddyfile
+    systemctl reload caddy 2>/dev/null || systemctl restart caddy 2>/dev/null || true
+  fi
+fi
+
 # ---------- 2. порты из настроек (для чистки фаервола) ----------
 PANEL_PORT=""
 D_FROM=""; D_TO=""

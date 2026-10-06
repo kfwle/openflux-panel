@@ -1,11 +1,12 @@
 #!/bin/bash
 # OpenFlux Panel — one-line installer.
-#   curl -fsSL https://your-host/setup.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/kfwle/openflux-panel/main/setup.sh | bash
 # Non-interactive too:
-#   curl -fsSL https://your-host/setup.sh | bash -s -- --port 8080 --user admin --mode l4 --yes
+#   curl -fsSL https://raw.githubusercontent.com/kfwle/openflux-panel/main/setup.sh | bash -s -- --port 4545 --user admin --mode l4 --domain panel.example.com --proxy caddy --yes
 #
-# What it does: installs Go (if needed), clones panel + OpenFlux core,
-# builds both, writes systemd unit, opens firewall, starts the panel.
+# What it does: installs Go (if needed), clones + builds panel, fetches
+# prebuilt OpenFlux core (or builds it), optional HTTPS via nginx/caddy,
+# writes systemd unit, opens firewall, starts the panel.
 
 set -u
 
@@ -22,6 +23,10 @@ DIRECT_TO="${DIRECT_TO:-20099}"
 DEFAULT_MODE="${DEFAULT_MODE:-}"      # empty -> l3 on root+linux, else l4
 BUILD_CORE="${BUILD_CORE:-ask}"       # yes/no/ask
 CORE_TAG="${CORE_TAG:-}"              # pin node release (node-vX.Y.Z); empty -> latest
+DO_TLS="${DO_TLS:-ask}"               # yes/no/ask: HTTPS via reverse-proxy
+DOMAIN="${DOMAIN:-}"                  # domain for the panel
+PROXY="${PROXY:-}"                    # nginx/caddy; empty -> autodetect/ask
+ACME_EMAIL="${ACME_EMAIL:-}"          # email for certbot (nginx path)
 OPEN_FW="${OPEN_FW:-ask}"             # yes/no/ask
 ASSUME_YES=0
 
@@ -45,6 +50,7 @@ ask_yesno() { # ask_yesno <var> <prompt> <defaultY/N>
   local var="$1" prompt="$2" def="$3" val=""
   if [ "$var" = "DO_CORE" ] && [ "$BUILD_CORE" != "ask" ]; then eval "$var=\"$BUILD_CORE\""; return; fi
   if [ "$var" = "DO_FW" ] && [ "$OPEN_FW" != "ask" ]; then eval "$var=\"$OPEN_FW\""; return; fi
+  if [ "$var" = "DO_TLS" ] && [ "$DO_TLS" != "ask" ]; then eval "$var=\"$DO_TLS\""; return; fi
   if [ "$ASSUME_YES" = "1" ]; then eval "$var=\"yes\""; return; fi
   if [ -t 0 ]; then printf '%s [%s]: ' "$prompt" "$def" >&2; read -r val || true
   elif [ -e /dev/tty ]; then printf '%s [%s]: ' "$prompt" "$def" >/dev/tty; read -r val </dev/tty || true
@@ -87,6 +93,9 @@ while [ $# -gt 0 ]; do
     --dir) INSTALL_DIR="$2"; shift 2;;
     --repo) PANEL_REPO="$2"; shift 2;;
     --core-tag) CORE_TAG="$2"; shift 2;;
+    --domain) DOMAIN="$2"; shift 2;;
+    --proxy) PROXY="$2"; shift 2;;
+    --email) ACME_EMAIL="$2"; shift 2;;
     --yes) ASSUME_YES=1; shift;;
     --no-core) BUILD_CORE="no"; shift;;
     --no-fw) OPEN_FW="no"; shift;;
@@ -119,6 +128,31 @@ fi
 ask INSTALL_DIR "Куда ставить" "$INSTALL_DIR"
 ask_yesno DO_CORE "Поставить ядро openflux (готовая сборка, иначе компиляция)" "yes"
 ask_yesno DO_FW "Открыть порты в фаерволе (панель + direct-диапазон)" "yes"
+ask_yesno DO_TLS "Выпустить сертификат и дать HTTPS (нужен домен на этот сервер)" "no"
+if [ "$DO_TLS" = "yes" ]; then
+  if [ -z "$DOMAIN" ]; then
+    if [ "$ASSUME_YES" = "1" ]; then warn "Нет --domain: HTTPS пропускаю"; DO_TLS="no"
+    else
+      ask DOMAIN "Домен панели (A-запись на $SHARE_HOST)" ""
+      [ -z "$DOMAIN" ] && { warn "Без домена HTTPS не выйдет — пропускаю"; DO_TLS="no"; }
+    fi
+  fi
+fi
+if [ "$DO_TLS" = "yes" ] && [ -z "$PROXY" ]; then
+  HAS_NGINX=0; HAS_CADDY=0
+  command -v nginx >/dev/null 2>&1 && HAS_NGINX=1
+  command -v caddy >/dev/null 2>&1 && HAS_CADDY=1
+  if [ "$HAS_NGINX" = "1" ] && [ "$HAS_CADDY" = "0" ]; then PROXY="nginx"; say "Нашёл nginx — использую его."
+  elif [ "$HAS_CADDY" = "1" ] && [ "$HAS_NGINX" = "0" ]; then PROXY="caddy"; say "Нашёл caddy — использую его."
+  else
+    [ "$HAS_NGINX" = "1" ] && [ "$HAS_CADDY" = "1" ] && warn "Стоят оба — выбери один."
+    ask PROXY "Какой прокси (nginx/caddy)" "caddy"
+  fi
+  case "$PROXY" in nginx|caddy) ;; *) warn "Непонятно '$PROXY' — пропускаю HTTPS"; DO_TLS="no";; esac
+fi
+if [ "$DO_TLS" = "yes" ] && [ "$PROXY" = "nginx" ] && [ -z "$ACME_EMAIL" ] && [ "$ASSUME_YES" != "1" ]; then
+  ask ACME_EMAIL "Email для Let's Encrypt (пусто — без почты)" ""
+fi
 
 echo ""
 say "Порт панели:      $PANEL_PORT"
@@ -126,6 +160,7 @@ say "Админ:             $ADMIN_USER"
 say "Share-host:        $SHARE_HOST"
 say "Direct-порты:      $DIRECT_FROM–$DIRECT_TO"
 say "Режим:             $DEFAULT_MODE"
+[ "$DO_TLS" = "yes" ] && say "HTTPS:             $DOMAIN → 127.0.0.1:$PANEL_PORT ($PROXY)"
 say "Каталог:           $INSTALL_DIR"
 echo ""
 
@@ -216,6 +251,118 @@ fi
 
 mkdir -p "$INSTALL_DIR/panel/data"
 
+# ---------- HTTPS: nginx ----------
+setup_nginx_proxy() {
+  if ! command -v nginx >/dev/null 2>&1; then
+    say "Ставлю nginx + certbot…"
+    if command -v apt-get >/dev/null 2>&1; then
+      apt-get update -qq && apt-get install -y -qq nginx certbot python3-certbot-nginx >/dev/null || return 1
+    elif command -v yum >/dev/null 2>&1; then
+      yum install -y -q nginx certbot python3-certbot-nginx >/dev/null || return 1
+    else
+      warn "Нет apt/yum — поставь nginx+certbot вручную"; return 1
+    fi
+  elif ! command -v certbot >/dev/null 2>&1; then
+    say "Ставлю certbot…"
+    (apt-get install -y -qq certbot python3-certbot-nginx >/dev/null 2>&1) || \
+    (yum install -y -q certbot python3-certbot-nginx >/dev/null 2>&1) || return 1
+  fi
+  local conf
+  if [ -d /etc/nginx/sites-enabled ]; then conf="/etc/nginx/sites-available/openflux-panel"
+  else conf="/etc/nginx/conf.d/openflux-panel.conf"; fi
+  say "Пишу конфиг nginx: $DOMAIN → 127.0.0.1:$PANEL_PORT…"
+  cat > "$conf" <<EOF
+# openflux-panel managed
+server {
+    listen 80;
+    server_name $DOMAIN;
+    location / {
+        proxy_pass http://127.0.0.1:$PANEL_PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+EOF
+  [ -d /etc/nginx/sites-enabled ] && ln -sf "$conf" /etc/nginx/sites-enabled/openflux-panel
+  nginx -t >/dev/null 2>&1 || { warn "nginx -t упал"; return 1; }
+  systemctl enable --now nginx 2>/dev/null || service nginx start 2>/dev/null || nginx 2>/dev/null || true
+  systemctl reload nginx 2>/dev/null || nginx -s reload 2>/dev/null || true
+  say "Выпускаю сертификат (certbot)…"
+  if [ -n "$ACME_EMAIL" ]; then
+    certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$ACME_EMAIL" --redirect || return 1
+  else
+    certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email --redirect || return 1
+  fi
+}
+
+# ---------- HTTPS: caddy (сертификат выпускает сам) ----------
+setup_caddy_proxy() {
+  local CADDY_BIN
+  CADDY_BIN=$(command -v caddy 2>/dev/null || true)
+  if [ -z "$CADDY_BIN" ]; then
+    local arch tag ver
+    case "$(uname -m)" in
+      x86_64) arch="amd64";; aarch64|arm64) arch="arm64";; armv7l|armhf) arch="armv7";; *)
+        warn "Архитектура $(uname -m): готовой сборки caddy нет"; return 1;;
+    esac
+    tag=$(curl -fsSL --max-time 20 "https://api.github.com/repos/caddyserver/caddy/releases/latest" 2>/dev/null \
+      | grep -o '"tag_name": *"[^"]*"' | head -1 | sed 's/.*: *"//;s/"//')
+    [ -n "$tag" ] || { warn "Не узнал версию caddy"; return 1; }
+    ver="${tag#v}"
+    say "Качаю caddy $tag…"
+    curl -fsSL --max-time 180 -o /tmp/caddy.tar.gz \
+      "https://github.com/caddyserver/caddy/releases/download/$tag/caddy_${ver}_linux_${arch}.tar.gz" || return 1
+    tar -xzf /tmp/caddy.tar.gz -C /tmp/ caddy || return 1
+    install -m 0755 /tmp/caddy /usr/local/bin/caddy
+    rm -f /tmp/caddy.tar.gz /tmp/caddy
+    CADDY_BIN=/usr/local/bin/caddy
+    id caddy >/dev/null 2>&1 || useradd -r -d /var/lib/caddy -s /usr/sbin/nologin caddy
+    mkdir -p /etc/caddy /var/lib/caddy /var/log/caddy
+    chown -R caddy:caddy /var/lib/caddy /var/log/caddy
+    cat > /etc/systemd/system/caddy.service <<'UNIT'
+[Unit]
+Description=Caddy web server
+After=network.target
+[Service]
+User=caddy
+Group=caddy
+Environment=HOME=/var/lib/caddy
+ExecStart=/usr/local/bin/caddy run --environ --config /etc/caddy/Caddyfile
+ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --force
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+Restart=always
+[Install]
+WantedBy=multi-user.target
+UNIT
+    touch /etc/caddy/Caddyfile
+    chown caddy:caddy /etc/caddy/Caddyfile
+    systemctl daemon-reload
+    systemctl enable --now caddy || return 1
+  fi
+  say "Прописываю $DOMAIN → 127.0.0.1:$PANEL_PORT (сертификат caddy выпустит сам)…"
+  if [ -f /etc/caddy/Caddyfile ]; then
+    sed -i '/# --- openflux-panel managed ---/,/# --- end openflux-panel ---/d' /etc/caddy/Caddyfile
+  else
+    mkdir -p /etc/caddy && touch /etc/caddy/Caddyfile
+  fi
+  cat >> /etc/caddy/Caddyfile <<EOF
+# --- openflux-panel managed ---
+$DOMAIN {
+    reverse_proxy 127.0.0.1:$PANEL_PORT
+}
+# --- end openflux-panel ---
+EOF
+  "$CADDY_BIN" fmt --overwrite /etc/caddy/Caddyfile >/dev/null 2>&1 || true
+  systemctl reload caddy 2>/dev/null || systemctl restart caddy || return 1
+  say "Готово. Caddy выпустит сертификат при первом обращении (обычно до минуты)."
+}
+
 # ---------- firewall ----------
 if [ "$DO_FW" = "yes" ] && [ "$(id -u)" = "0" ]; then
   if command -v ufw >/dev/null 2>&1; then
@@ -241,6 +388,35 @@ if [ "$DO_FW" = "yes" ] && [ "$(id -u)" = "0" ]; then
       iptables -C OUTPUT -p tcp --tcp-flags RST RST -s "$EGRESS" -j DROP 2>/dev/null || \
       iptables -A OUTPUT -p tcp --tcp-flags RST RST -s "$EGRESS" -j DROP
     fi
+  fi
+fi
+
+# ---------- HTTPS: reverse-proxy 443 -> панель + сертификат ----------
+TLS_OK=""
+if [ "$DO_TLS" = "yes" ]; then
+  if [ "$(id -u)" != "0" ]; then
+    warn "Без root прокси и сертификат не поставить — пропускаю HTTPS."
+  else
+    DIP=$(getent hosts "$DOMAIN" 2>/dev/null | awk '{print $1}' | head -1)
+    if [ -n "$DIP" ] && [ "$DIP" != "$SHARE_HOST" ]; then
+      warn "Домен резолвится в $DIP, а сервер $SHARE_HOST — выпуск серта может упасть. Проверь A-запись."
+    fi
+    say "Открываю 80/443 для ACME и HTTPS…"
+    if command -v ufw >/dev/null 2>&1; then
+      ufw allow 80/tcp >/dev/null 2>&1 || true
+      ufw allow 443/tcp >/dev/null 2>&1 || true
+    elif command -v firewall-cmd >/dev/null 2>&1; then
+      firewall-cmd --permanent --add-port=80/tcp >/dev/null 2>&1 || true
+      firewall-cmd --permanent --add-port=443/tcp >/dev/null 2>&1 || true
+      firewall-cmd --reload >/dev/null 2>&1 || true
+    elif command -v iptables >/dev/null 2>&1; then
+      iptables -C INPUT -p tcp --dport 80 -j ACCEPT 2>/dev/null || iptables -I INPUT -p tcp --dport 80 -j ACCEPT
+      iptables -C INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null || iptables -I INPUT -p tcp --dport 443 -j ACCEPT
+    fi
+    case "$PROXY" in
+      nginx) setup_nginx_proxy && TLS_OK=1 || warn "nginx + сертификат не встали — панель доступна по http" ;;
+      caddy) setup_caddy_proxy && TLS_OK=1 || warn "caddy не встал — панель доступна по http" ;;
+    esac
   fi
 fi
 
@@ -301,7 +477,11 @@ fi
 
 echo ""
 echo "——— Готово ———"
-echo "Панель:  http://$SHARE_HOST:$PANEL_PORT"
+if [ -n "$TLS_OK" ]; then
+  echo "Панель:  https://$DOMAIN  (443 → $PANEL_PORT)"
+else
+  echo "Панель:  http://$SHARE_HOST:$PANEL_PORT"
+fi
 echo "Логин:   $ADMIN_USER"
 echo "Пароль:  $ADMIN_PASS"
 [ "${GENERATED:-0}" = "1" ] && echo "(пароль сгенерирован — смените в Настройках)"
