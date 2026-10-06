@@ -33,10 +33,8 @@
 
 ## Установка одной командой
 
-Залейте `setup.sh` на свой хостинг (или используйте из репозитория) и на VPS:
-
 ```bash
-curl -fsSL https://ваш-хост/setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kfwle/openflux-panel/main/setup.sh | bash
 ```
 
 Скрипт **спросит**: порт панели, логин/пароль админа (или сгенерирует), белый IP сервера,
@@ -48,7 +46,7 @@ kernel RST, запустит сервис.
 Неинтерактивно:
 
 ```bash
-curl -fsSL https://ваш-хост/setup.sh | bash -s -- \
+curl -fsSL https://raw.githubusercontent.com/kfwle/openflux-panel/main/setup.sh | bash -s -- \
   --port 8080 --user admin --mode l4 --yes
 # ещё флаги: --pass, --host, --from, --to, --dir, --repo, --no-core, --no-fw
 ```
@@ -72,7 +70,7 @@ docker compose up -d --build
 
 ## Как создать ключ
 
-1. **Ключи → Новый ключ**: имя, режим, секрет (кнопка 🎲), транспорты (тип + URL + приоритет).
+1. **Ключи → Новый ключ**: имя, режим, секрет (кнопка с кубиком — сгенерировать), транспорты (тип + URL + приоритет).
    Минимум — один `direct` (порт выдастся автоматически).
 2. Пример мульти: `direct:100` + `yandex:50` (URL **своего** Яндекс.Документа).
 3. Лимиты: трафик, IP, дата «до».
@@ -90,6 +88,11 @@ openflux://v1/<base64url_nopad( raw_DEFLATE( JSON ) )>
 - `oneme` в ссылку не входит: в панели храните `token|uid` в поле URL.
 
 ## Разработка
+
+```bash
+git clone https://github.com/kfwle/openflux-panel.git && cd openflux-panel
+go build -o openflux-panel . && ./openflux-panel -port 8080 -data ./data
+```
 
 ```
 openflux-panel/

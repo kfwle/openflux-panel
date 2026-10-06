@@ -10,7 +10,7 @@
 set -u
 
 # ---------- configurable defaults (override via env or flags) ----------
-PANEL_REPO="${PANEL_REPO:-https://github.com/p1neappleXpress/OpenFluxPanel}"
+PANEL_REPO="${PANEL_REPO:-https://github.com/kfwle/openflux-panel.git}"
 CORE_REPO="${CORE_REPO:-https://github.com/p1neappleXpress/OpenFlux}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/openflux-panel}"
 PANEL_PORT="${PANEL_PORT:-8080}"
