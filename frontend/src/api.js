@@ -33,7 +33,7 @@ export function randomSecret() {
   return [...a].map((x) => x.toString(16).padStart(2, '0')).join('');
 }
 
-export const TRANSPORTS = ['direct', 'yandex', 'vyandex', 'boards', 'mailru', 'cupsonline', 'oneme'];
+export const TRANSPORTS = ['direct', 'yandex', 'vyandex', 'boards', 'mailru', 'cupsonline', 'oneme', 'avito', 'telemost'];
 export const TR_HINT = {
   direct: 'порт берётся из поля «Direct-порт»',
   yandex: 'https://docs.yandex.ru/…',
@@ -42,4 +42,6 @@ export const TR_HINT = {
   mailru: 'https://cloud.mail.ru/public/…',
   cupsonline: 'room-URL или пусто — exit создаст сам',
   oneme: 'в поле URL: token|uid (в ссылку не попадёт)',
+  avito: 'ссылка code.avito.ru (ShareDB-комната)',
+  telemost: 'ссылка на конференцию Yandex Telemost (попадёт в общий --url)',
 };

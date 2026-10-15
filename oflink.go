@@ -56,6 +56,7 @@ func secretChars(s string) int { return len(utf16.Encode([]rune(s))) }
 var knownLinkTypes = map[string]bool{
 	"yandex": true, "vyandex": true, "boards": true,
 	"mailru": true, "cupsonline": true, "direct": true,
+	"avito": true, "telemost": true,
 }
 
 func validateConfig(c *OFConfig) *LinkError {
@@ -190,9 +191,24 @@ func contextURL(t OFTransport) bool {
 }
 
 // DeriveContext mirrors transport.KDFContexts primary rule.
+// The exit derives its context from the global --url, which the panel
+// forces to the telemost link whenever a telemost transport is present
+// (telemost has no per-transport flag), so the link must agree.
 func DeriveContext(explicit, globalURL string, ts []OFTransport) string {
 	if explicit != "" {
 		return explicit
+	}
+	tbest := -1
+	for i, s := range ts {
+		if s.Type != "telemost" || s.URL == "" || s.URL == contextPlaceholder {
+			continue
+		}
+		if tbest < 0 || s.Priority > ts[tbest].Priority {
+			tbest = i
+		}
+	}
+	if tbest >= 0 {
+		return ts[tbest].URL
 	}
 	cups := len(ts) == 1 && ts[0].Type == "cupsonline"
 	if globalURL != "" && globalURL != contextPlaceholder && !cups {

@@ -168,6 +168,10 @@ export function TrIcon({ type, size = 15 }) {
       return (<img src={cupsIcon} alt="cups.online" width={size} height={size} style={{ width: size, height: size, borderRadius: size / 4, flexShrink: 0 }} />);
     case 'oneme': // MAX — официальный логотип
       return (<img src={maxLogo} alt="MAX" width={size} height={size} style={{ width: size, height: size, borderRadius: size / 4, flexShrink: 0 }} />);
+    case 'avito': // Avito — белая «A» на фирменном зелёном
+      return (<svg {...box}><rect width="24" height="24" rx="6" fill="#0AF" /><text x="12" y="17.5" textAnchor="middle" fontSize="14" fontWeight="800" fill="#fff" fontFamily="Arial,sans-serif">A</text></svg>);
+    case 'telemost': // Telemost — белая «T» на тёмно-синем
+      return (<svg {...box}><rect width="24" height="24" rx="6" fill="#1F3A5F" /><text x="12" y="17.5" textAnchor="middle" fontSize="14" fontWeight="800" fill="#fff" fontFamily="Arial,sans-serif">T</text></svg>);
     case 'direct': // Direct — глобус
       return (<svg {...box}><rect width="24" height="24" rx="6" fill="#E7EFEC" /><g fill="none" stroke="#2F665C" strokeWidth="1.6"><circle cx="12" cy="12" r="6.5" /><ellipse cx="12" cy="12" rx="3" ry="6.5" /><path d="M5.5 12h13M7 8.2c3.5 1.2 6.5 1.2 10 0M7 15.8c3.5-1.2 6.5-1.2 10 0" /></g></svg>);
     default:

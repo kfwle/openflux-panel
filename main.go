@@ -261,6 +261,7 @@ func hStats(w http.ResponseWriter, r *http.Request) {
 var allowedTypes = map[string]bool{
 	"yandex": true, "vyandex": true, "boards": true,
 	"mailru": true, "cupsonline": true, "direct": true, "oneme": true,
+	"avito": true, "telemost": true,
 }
 
 type keyInput struct {

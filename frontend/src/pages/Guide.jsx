@@ -8,6 +8,8 @@ const ROWS = [
   ['mailru', 'публичная ссылка cloud.mail.ru', 'да', 'WebSocket. Также носитель stream-режима.'],
   ['cupsonline', 'room-ссылка или пусто', 'да', 'Centrifugo rooms. Носитель stream-режима.'],
   ['oneme', 'MAX token + uid', 'нет — токен личный', 'WebRTC DataChannel. В панели: token|uid в поле URL.'],
+  ['avito', 'ссылка code.avito.ru', 'да', 'ShareDB-комнаты, striped. Скорость суммируется по комнатам.'],
+  ['telemost', 'ссылка на конференцию', 'да', 'Striped по участникам. Ссылка уходит в общий --url.'],
 ];
 
 export default function Guide() {

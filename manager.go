@@ -82,6 +82,20 @@ func (m *Manager) buildArgs(k *Key) []string {
 	if best >= 0 {
 		globalURL = k.Transports[best].URL
 	}
+	// telemost has no per-transport flag (uses global --url), so its link
+	// wins the global URL whenever present.
+	tbest := -1
+	for i, t := range k.Transports {
+		if t.Type != "telemost" || t.URL == "" {
+			continue
+		}
+		if tbest < 0 || t.Priority > k.Transports[tbest].Priority {
+			tbest = i
+		}
+	}
+	if tbest >= 0 {
+		globalURL = k.Transports[tbest].URL
+	}
 	if k.Context != "" {
 		globalURL = k.Context
 	}
@@ -149,6 +163,10 @@ func (m *Manager) buildArgs(k *Key) []string {
 		case "cupsonline":
 			if t.URL != "" {
 				args = append(args, "--cupsonline-url="+t.URL)
+			}
+		case "avito":
+			if t.URL != "" {
+				args = append(args, "--avito-url="+t.URL)
 			}
 		case "oneme":
 			// token/uid cannot come from link; panel stores "token|uid" in URL field
